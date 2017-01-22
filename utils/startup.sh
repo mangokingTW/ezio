@@ -21,8 +21,10 @@ MAGNET=$(cat ezio.conf | grep 'magnet' | sed 's|.*=[_[:blank:]]*||')
 # target disk
 TARGET=$(cat ezio.conf | grep 'disk' | sed 's|.*=[_[:blank:]]*||')
 
+OPTION=$(cat ezio.conf | grep 'option' | sed 's|.*=[_[:blank:]]*||')
+
 # exec ezio
-static-ezio "$TORRENT" "$TARGET"
+static-ezio "$OPTION" "$TORRENT" "$TARGET"
 
 echo "Clone done. Shutdown."
 poweroff

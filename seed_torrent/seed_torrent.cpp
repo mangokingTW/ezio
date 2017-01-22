@@ -13,10 +13,47 @@
 #include <libtorrent/io.hpp>
 #include <libtorrent/settings_pack.hpp>
 #include <libtorrent/torrent_info.hpp>
+#include <libtorrent/extensions.hpp>
+#include <libtorrent/peer_connection_handle.hpp>
+#include <libtorrent/peer_connection.hpp>
 
 #include <boost/progress.hpp>
 
-namespace lt = libtorrent;
+using namespace libtorrent;
+
+struct compress_peer_plugin : peer_plugin
+{
+	compress_peer_plugin(peer_connection_handle const& spc) : pc(spc){
+	};
+
+	virtual bool on_request(peer_request const& r) TORRENT_OVERRIDE{
+		//do_request(r);
+		//return true;
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		return false;
+	};
+	
+	void do_request(peer_request const& r){
+		boost::shared_ptr<peer_connection> rpc = pc.native_handle();
+		TORRENT_ASSERT(rpc);
+	};
+	
+	int i=0;
+	peer_connection_handle pc;
+};
+
+struct compress_torrent_plugin
+	: torrent_plugin
+	, boost::enable_shared_from_this<compress_torrent_plugin>
+{
+	virtual boost::shared_ptr<peer_plugin> new_connection(peer_connection_handle const& pc) TORRENT_OVERRIDE{
+		return boost::shared_ptr<compress_peer_plugin>(new compress_peer_plugin(pc));
+	}
+};
+
+boost::shared_ptr<compress_torrent_plugin> plugin_func(torrent_handle const& th, void* userdata){
+	return boost::shared_ptr<compress_torrent_plugin>(new compress_torrent_plugin());
+}
 
 int main(int argc, char const* argv[])
 {
@@ -24,23 +61,24 @@ int main(int argc, char const* argv[])
 		std::cerr << "usage: " << argv[0] << " <magnet-url/torrent-file> <target-partition-path>" << std::endl;
 		return 1;
 	}
-	lt::session ses;
-	lt::error_code ec;
-	lt::settings_pack set;
+	session ses;
+	error_code ec;
+	settings_pack set;
 
 	// setting
 	// we don't need DHT
-	set.set_bool(lt::settings_pack::enable_dht, false);
-	set.set_str(lt::settings_pack::listen_interfaces, "0.0.0.0:6666");
+	set.set_bool(settings_pack::enable_dht, false);
+	set.set_str(settings_pack::listen_interfaces, "0.0.0.0:6666");
 	ses.apply_settings(set);
+	//ses.add_extension(plugin_func);
 
-	lt::add_torrent_params atp;
+	add_torrent_params atp;
 
 	// magnet or torrent
 	// TODO find a better way
 	std::string bt_info = argv[1];
 	if(bt_info.substr(bt_info.length() - 8, 8) == ".torrent"){
-		atp.ti = boost::make_shared<lt::torrent_info>(bt_info, boost::ref(ec), 0);
+		atp.ti = boost::make_shared<torrent_info>(bt_info, boost::ref(ec), 0);
 	}
 	else{
 		atp.url = argv[1];
@@ -48,15 +86,15 @@ int main(int argc, char const* argv[])
 	atp.save_path = argv[2];
 	atp.flags |= atp.flag_seed_mode;
 
-	lt::torrent_handle handle = ses.add_torrent(atp);
+	torrent_handle handle = ses.add_torrent(atp);
 	//handle.set_max_uploads(4);
 	//handle.set_sequential_download(1);
 	//boost::progress_display show_progress(100, std::cout);
 	unsigned long last_progess = 0, progress = 0;
-	lt::torrent_status status;
+	torrent_status status;
 
 	for(;;){
-		std::vector<lt::alert*> alerts;
+		std::vector<alert*> alerts;
 		ses.pop_alerts(&alerts);
 
 		status = handle.status();
@@ -70,16 +108,16 @@ int main(int argc, char const* argv[])
 			<< "[U: " << (float)status.upload_payload_rate / 1024 / 1024 << "MB/s] "
 			<< std::flush;
 
-		for (lt::alert const* a : alerts) {
+		for (alert const* a : alerts) {
 			// std::cout << a->message() << std::endl;
 			// if we receive the finished alert or an error, we're done
-			if (lt::alert_cast<lt::torrent_finished_alert>(a)) {
+			if (alert_cast<torrent_finished_alert>(a)) {
 				goto done;
 			}
 			if (status.is_finished) {
 				goto done;
 			}
-			if (lt::alert_cast<lt::torrent_error_alert>(a)) {
+			if (alert_cast<torrent_error_alert>(a)) {
 				std::cerr << a->message() << std::endl;
 				return 1;
 			}
@@ -91,7 +129,7 @@ int main(int argc, char const* argv[])
 
 
 	// Start high performance seed
-	lt::high_performance_seed(set);
+	high_performance_seed(set);
 	ses.apply_settings(set);
 	std::cout << "Start seeding" << std::endl;
 

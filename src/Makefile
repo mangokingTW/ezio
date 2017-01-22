@@ -4,7 +4,7 @@ STATIC_PROG = static-$(PROG)
 CC =
 CXX = g++
 LD = g++
-CXXFLAGS = -std=c++11 -I./
+CXXFLAGS = -std=c++11 -I../
 LDFLAGS = -ltorrent-rasterbar -lboost_system -lpthread -lstdc++ -lm -lgcc -lssl -lcrypto -lboost_chrono -lboost_random -ldl
 
 OBJS = main.o single_partition_storage.o full_disk_storage.o

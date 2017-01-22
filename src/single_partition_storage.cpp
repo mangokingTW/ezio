@@ -1,4 +1,4 @@
-#include "include/storage_interface.hpp"
+#include "include/single_partition_storage.hpp"
 
 namespace libtorrent{
 

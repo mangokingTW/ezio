@@ -202,7 +202,7 @@ struct raw_storage : lt::storage_interface {
 
 lt::storage_interface* raw_storage_constructor(lt::storage_params const& params)
 {
-	return new raw_storage(*params.files, params.path);
+	return new temp_storage(*params.files, params.path);
 }
 
 void usage()

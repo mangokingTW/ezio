@@ -28,7 +28,6 @@
 namespace lt = libtorrent;
 
 int timeout_ezio = 15; // Default timeout (min)
-int seed_limit_ezio = 3; // Default seeding ratio limit
 int max_upload_ezio = 4;
 int max_connection_ezio = max_upload_ezio + 2;
 int max_contact_tracker_times = 30; // Max error times for scrape tracker
@@ -209,7 +208,6 @@ void usage()
 {
       std::cerr << "Usage: ezio [OPTIONS] <magnet-url/torrent-file> <target-partition-path>\n"
                 << "OPTIONS:\n"
-                << "	-e N: assign seeding ratio limit as N. Default value is " << seed_limit_ezio <<"\n"
                 << "	-k N: assign maxminum failure number to contact tracker as N. Default value is " << max_contact_tracker_times<< "\n"
                 << "	-m N: assign maxminum upload number as N. Default value is " << max_upload_ezio <<"\n"
                 << "	-c N: assign maxminum connection number as N. Default value is " << max_upload_ezio + 2 <<"\n"
@@ -229,14 +227,9 @@ int main(int argc, char ** argv)
 	std::string logfile = "";
 
 	opterr = 0;
-	while (( opt = getopt (argc, argv, "e:m:c:st:l:")) != -1)
+	while (( opt = getopt (argc, argv, "m:c:st:l:")) != -1)
 	  switch (opt)
 	    {
-	    case 'e':
-	      seed_limit_ezio = atoi(optarg);
-	      ++opt_n;
-	      ++opt_n;
-	      break;
 	    case 'm':
 	      max_upload_ezio = atoi(optarg);
 	      ++opt_n;
@@ -289,19 +282,17 @@ int main(int argc, char ** argv)
 	// setting
 	// we don't need DHT
 	set.set_bool(lt::settings_pack::enable_dht, false);
-#ifdef __linux__
-	// Determine Physical Ram Size
-	// if more than 2GB, set cache to half of Ram
-	struct sysinfo info;
-	if(sysinfo(&info) == 0) {
-		unsigned long totalram = info.totalram * info.mem_unit;
-		if(totalram > RAM_2G) {
-			// unit: blocks per 16KiB
-			int size = (int)(totalram / 16 / 1024 / 2);
-			set.set_int(lt::settings_pack::cache_size, size);
-		}
-	}
-#endif
+	set.set_bool(lt::settings_pack::guided_read_cache, true);
+	set.set_int(lt::settings_pack::seed_choking_algorithm, lt::settings_pack::anti_leech);
+	set.set_int(lt::settings_pack::mixed_mode_algorithm, lt::settings_pack::prefer_tcp);
+
+	set.set_int(lt::settings_pack::cache_size, 102400);
+	set.set_bool(lt::settings_pack::use_read_cache, true);
+	set.set_int(lt::settings_pack::suggest_mode, lt::settings_pack::suggest_read_cache);
+	set.set_int(lt::settings_pack::send_buffer_watermark, 128 * 1024 * 1024);
+	set.set_int(lt::settings_pack::send_buffer_watermark_factor, 150);
+	set.set_int(lt::settings_pack::send_buffer_low_watermark, 24 * 1024 * 1024);
+
 	ses.apply_settings(set);
 
 	// magnet or torrent
@@ -316,7 +307,7 @@ int main(int argc, char ** argv)
 
 	lt::torrent_handle handle = ses.add_torrent(atp);
 	handle.set_max_uploads(max_upload_ezio);
-	handle.set_max_connections(max_connection_ezio);
+	//handle.set_max_connections(max_connection_ezio);
 	handle.set_sequential_download(seq_flag);
 	//boost::progress_display show_progress(100, std::cout);
 	unsigned long last_progess = 0, progress = 0;
@@ -345,6 +336,7 @@ int main(int argc, char ** argv)
 			<< "[DT: " << (int)status.active_time  << " secs] "
 			<< "[U: " << std::setprecision(2) << (float)status.upload_payload_rate / 1024 / 1024 /1024 *60 << " GB/min] "
 			<< "[UT: " << (int)status.seeding_time  << " secs] "
+			<< status.state
 			<< std::flush;
 
 		// Log info
@@ -369,13 +361,13 @@ int main(int argc, char ** argv)
 			if (lt::alert_cast<lt::torrent_finished_alert>(a)) {
 				goto done;
 			}
-			if (status.is_finished) {
-				goto done;
-			}
 			if (lt::alert_cast<lt::torrent_error_alert>(a)) {
 				std::cerr << "Error" << std::endl;
 				return 1;
 			}
+		}
+		if (status.is_finished) {
+			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 	}
@@ -392,8 +384,8 @@ int main(int argc, char ** argv)
 	int timeout = timeout_ezio * 60;
 
 	// seed until seed rate
-	boost::int64_t seeding_rate_limit = seed_limit_ezio;
 	boost::int64_t total_size = handle.torrent_file()->total_size();
+	int upload_counter = 0;
 
 	int fail_contact_tracker = 0;
 	for (;;) {
@@ -415,26 +407,9 @@ int main(int argc, char ** argv)
 			<< "[T: " << (int)status.seeding_time  << " secs] "
 			<< std::flush;
 
-		if(utime == -1 && timeout < dtime){
-			break;
-		}
-		else if(timeout < utime){
-			break;
-		}
-		else if(seeding_rate_limit < (total_payload_upload / total_size)){
-			break;
-		}
-
-		handle.scrape_tracker();
-		for (lt::alert const* a : alerts) {
-			if (lt::alert_cast<lt::scrape_failed_alert>(a)) {
-				++fail_contact_tracker;;
-			}
-		}
-
-		if(fail_contact_tracker > max_contact_tracker_times){
-	                std::cout << "\nTracker is gone! Finish seeding!" << std::endl;
-			break;
+		if( status.num_uploads == 0 ){
+			upload_counter++;
+			if( upload_counter >= 3 ) break;
 		}
 
 		std::this_thread::sleep_for(std::chrono::seconds(1));

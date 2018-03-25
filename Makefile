@@ -4,8 +4,8 @@ STATIC_PROG = static-$(PROG)
 CC =
 CXX = g++
 LD = g++
-CXXFLAGS = -std=c++11 -I./
-LDFLAGS = -ltorrent-rasterbar -lboost_system -lstdc++ -lm -lgcc -lssl -lcrypto -lboost_chrono -lboost_random -ldl -lpthread
+CXXFLAGS = -std=c++11 -I./ -L/usr/lib/
+LDFLAGS = -ltorrent-rasterbar -lboost_system -lstdc++ -lm -lgcc -lssl -lcrypto -lboost_chrono -lboost_random -ldl -lc -lpthread
 
 OBJS = main.o \
 	logger.o
